@@ -263,7 +263,7 @@ if section == "Агент":
                                              "attachments": [file.name for file in files]})
             with st.chat_message("assistant"):
                 with st.status("Агент обращается к Gemini и инструментам…", expanded=True) as status:
-                    st.caption("Получение ответа может занять до двух минут.")
+                    st.caption("Получение ответа может занять до минуты.")
                     try:
                         if backend == "Agent Engine":
                             result = query_remote(resource, message, context)
