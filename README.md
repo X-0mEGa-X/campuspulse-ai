@@ -2,6 +2,15 @@
 
 Учебный помощник для кейса № 2 Build with AI / GDG Astana. Gemini выбирает инструменты, настоящий MCP-сервер получает данные и рассчитывает учебный план. Streamlit показывает результат, источники и журнал выполненных вызовов.
 
+## Ссылки для сдачи
+
+- [Репозиторий проекта](https://github.com/X-0mEGa-X/campuspulse-ai)
+- [Презентация, 8 слайдов](output/presentation/CampusPulse-AI.pptx)
+- [Скачать исходники ZIP](https://github.com/X-0mEGa-X/campuspulse-ai/archive/refs/heads/main.zip)
+- [Сценарий демонстрации](docs/DEMO.md)
+
+Облачное развёртывание в Agent Engine пока не выполнено. Подробнее о текущем состоянии ниже.
+
 ## Что готово
 
 - Чат с Gemini 3.8 Flash через бесплатный Gemini Developer API или Vertex AI.

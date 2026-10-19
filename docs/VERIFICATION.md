@@ -12,6 +12,7 @@
 | Agent Engine deploy --dry-run | Конфигурация и импорт SDK проверены |
 | Agent Engine create / remote smoke | Не выполнялись: billingEnabled=false |
 | Презентация | 8 слайдов, проверены пакет, геометрия, шрифты и импорт |
+| GitHub | Исходники опубликованы в X-0mEGa-X/campuspulse-ai, ветка main |
 
 Скриншоты реальных проверок: [план](images/plan.png), [ответ Gemini](images/agent.png), [журнал вызовов](images/trace.png).
 
