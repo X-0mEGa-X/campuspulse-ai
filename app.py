@@ -73,6 +73,7 @@ with st.sidebar:
     st.title("CampusPulse", icon=":material/school:")
     st.caption("AI study companion")
     section = st.radio("Рабочее пространство", ["Агент", "Учебный план", "Материалы", "Подключение"], key="section")
+    chat_controls = st.container()
     st.space("small")
     cloud_modes = st.toggle("Показать режимы Google Cloud", value=False,
                             help="Vertex AI и Agent Engine требуют отдельного проекта с активным биллингом.")
@@ -153,7 +154,6 @@ if section == "Агент":
                     st.caption("Вложения: " + ", ".join(msg["attachments"]))
                 if msg.get("result"):
                     show_trace(msg["result"], f"message_{index}")
-        st.caption("Прикрепи файл или фото кнопкой + у поля сообщения. PDF, DOCX, TXT, MD, JPG, PNG, WebP; до 5 файлов по 5 МБ, не более 3 фото и 10 МБ суммарно. При запросе вложения передаются в Google.")
         if submission := st.chat_input("Что нужно успеть на этой неделе?", max_chars=12000,
                                        accept_file="multiple", file_type=ATTACHMENT_TYPES, max_upload_size=5,
                                        disabled=bool(connection_problem), submit_mode="disable"):
@@ -195,15 +195,20 @@ if section == "Агент":
             st.session_state.messages = st.session_state.messages[-12:]
             if result.get("plan"):
                 st.session_state.plan = result["plan"]
-        if st.session_state.plan:
-            show_plan(st.session_state.plan, "chat")
-        if st.session_state.messages and st.button("Очистить разговор", icon=":material/restart_alt:"):
-            st.session_state.messages = []
-            st.rerun()
-        if (st.session_state.documents or st.session_state.images) and st.button("Убрать все вложения", icon=":material/close:"):
-            st.session_state.documents, st.session_state.images = [], []
-            st.rerun()
-        st.caption("Агент учитывает текущие задачи, материалы и последние 10 сообщений (до 2000 символов каждое). Очистка разговора удаляет контекст переписки.")
+                st.session_state.last_plan_trace = result
+                st.toast("Расписание и календарь готовы в разделе «Учебный план».", icon=":material/calendar_month:")
+        with chat_controls:
+            if st.session_state.plan:
+                st.caption("Расписание и скачивание календаря — в разделе «Учебный план».")
+            with st.expander("Чат и вложения", icon=":material/tune:"):
+                st.caption("Прикрепи файл или фото кнопкой + у поля сообщения. PDF, DOCX, TXT, MD, JPG, PNG, WebP; до 5 файлов по 5 МБ, не более 3 фото и 10 МБ суммарно. При запросе вложения передаются в Google.")
+                if st.session_state.messages and st.button("Очистить разговор", icon=":material/restart_alt:"):
+                    st.session_state.messages = []
+                    st.rerun()
+                if (st.session_state.documents or st.session_state.images) and st.button("Убрать все вложения", icon=":material/close:"):
+                    st.session_state.documents, st.session_state.images = [], []
+                    st.rerun()
+                st.caption("Агент учитывает текущие задачи, материалы и последние 10 сообщений (до 2000 символов каждое). Очистка разговора удаляет контекст переписки.")
 
 elif section == "Учебный план":
     st.title("Освободи время для главного.")
@@ -242,7 +247,7 @@ elif section == "Учебный план":
                         st.error(str(result["output"]))
                 except Exception as error:
                     st.error(clean_error(error))
-    else:
+    elif not st.session_state.plan:
         st.caption("Пока нет задач. Добавь первую выше или импортируй актуальные Issues из GitHub в разделе «Агент».")
     if st.session_state.plan:
         show_plan(st.session_state.plan, "planner")
