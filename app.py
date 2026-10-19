@@ -23,20 +23,22 @@ if (ROOT / "deployment.json").exists():
     deployment = json.loads((ROOT / "deployment.json").read_text(encoding="utf-8"))
 project = os.getenv("GOOGLE_CLOUD_PROJECT", "")
 resource = os.getenv("AGENT_ENGINE_RESOURCE") or deployment.get("resource_name", "")
-model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 for key, value in {"tasks": [], "documents": [], "messages": [], "last_result": None, "plan": None}.items():
     st.session_state.setdefault(key, value)
 
 
 def show_trace(result: dict, key: str):
     events = result.get("events", [])
-    with st.expander(f"Журнал действий · {sum(e['kind'] == 'tool' for e in events)} вызовов", icon=":material/account_tree:"):
+    with st.expander(f"Журнал действий ({sum(e['kind'] == 'tool' for e in events)})", icon=":material/account_tree:"):
         st.caption("Фактические вызовы и результаты инструментов. Внутренние рассуждения модели не отображаются.")
-        for index, event in enumerate(events):
+        tool_number = 0
+        for event in events:
             if event["kind"] == "connect":
                 st.caption(f"MCP / stdio · доступно {event['tool_count']} инструментов")
                 continue
-            st.markdown(f"**{index + 1}. `{event['name']}`** · {event['duration_ms']} мс · {'готово' if event['ok'] else 'ошибка'}")
+            tool_number += 1
+            st.markdown(f"**{tool_number}. `{event['name']}`** · {event['duration_ms']} мс · {'готово' if event['ok'] else 'ошибка'}")
             with st.expander("Аргументы и результат"):
                 st.json({"arguments": event["arguments"], "result": event["output"]})
         st.download_button("Скачать журнал JSON", json.dumps(result, ensure_ascii=False, indent=2),
@@ -70,10 +72,16 @@ with st.sidebar:
     st.caption("AI study companion")
     section = st.radio("Рабочее пространство", ["Агент", "Учебный план", "Материалы", "Подключение"], key="section")
     st.space("small")
-    backend_options = ["Vertex AI", "Agent Engine", "Gemini API", "Только инструменты"]
+    cloud_modes = st.toggle("Показать режимы Google Cloud", value=False,
+                            help="Vertex AI и Agent Engine требуют отдельного проекта с активным биллингом.")
+    backend_options = ["Gemini API", "Только инструменты"] + (["Vertex AI", "Agent Engine"] if cloud_modes else [])
+    if st.session_state.get("backend") not in backend_options:
+        st.session_state.backend = "Gemini API" if os.getenv("GEMINI_API_KEY") else "Только инструменты"
     backend = st.selectbox("Режим работы", backend_options,
-                           index=1 if resource else 2 if os.getenv("GEMINI_API_KEY") else 0 if project else 3, key="backend")
-    timezone = st.selectbox("Часовой пояс", ["Asia/Almaty", "Asia/Astana", "UTC", "Europe/Moscow"], key="timezone")
+                           format_func=lambda option: "Gemini API · бесплатная квота" if option == "Gemini API" else option, key="backend")
+    if backend == "Gemini API":
+        st.caption("Прямое подключение к Gemini Flash. Для ключа на бесплатном тарифе действуют квоты. Приложение не подключает биллинг и не переключается на Vertex AI автоматически.")
+    timezone = st.selectbox("Часовой пояс", ["Asia/Almaty", "Asia/Astana", "Asia/Bishkek", "UTC", "Europe/Moscow"], key="timezone")
     # Astana is represented by the canonical IANA zone Asia/Almaty.
     timezone = "Asia/Almaty" if timezone == "Asia/Astana" else timezone
     daily_minutes = st.slider("Минут на учёбу в день", 30, 240, 120, step=15)
@@ -83,6 +91,13 @@ with st.sidebar:
 
 context = {"timezone": timezone, "daily_minutes": daily_minutes, "days": 7,
            "start_hour": start_hour, "tasks": st.session_state.tasks, "documents": st.session_state.documents}
+connection_problem = None
+if backend == "Gemini API" and not os.getenv("GEMINI_API_KEY"):
+    connection_problem = "Добавь GEMINI_API_KEY из Google AI Studio в .env и перезапусти приложение. Пока можно выбрать «Только инструменты»."
+elif backend == "Agent Engine" and not resource:
+    connection_problem = "Agent Engine ещё не развёрнут. Для бесплатного локального чата выбери «Gemini API»."
+elif backend == "Vertex AI" and not project:
+    connection_problem = "Для Vertex AI требуется GOOGLE_CLOUD_PROJECT. Для бесплатного локального чата выбери «Gemini API»."
 
 if section == "Агент":
     st.caption("ТВОЯ НЕДЕЛЯ ПОД КОНТРОЛЕМ")
@@ -123,8 +138,8 @@ if section == "Агент":
             show_trace(result, "playground")
     else:
         st.caption("Примеры: «Проверь задания в репозитории и составь план на неделю» · «Объясни тему из конспекта»")
-        if backend == "Agent Engine" and not resource:
-            st.warning("Ресурс Agent Engine ещё не указан. Настройки доступны в разделе «Подключение».")
+        if connection_problem:
+            st.warning(connection_problem)
         if not st.session_state.messages:
             with st.chat_message("assistant", avatar=":material/school:"):
                 st.markdown("Привет! Добавь задачи или материалы и расскажи, что нужно успеть. Если укажешь репозиторий курса, я проверю его актуальные задания.")
@@ -133,7 +148,9 @@ if section == "Агент":
                 st.markdown(msg["text"])
                 if msg.get("result"):
                     show_trace(msg["result"], f"message_{index}")
-        if message := st.chat_input("Что нужно успеть на этой неделе?", max_chars=12000):
+        if message := st.chat_input("Что нужно успеть на этой неделе?", max_chars=12000,
+                                    disabled=bool(connection_problem), submit_mode="disable"):
+            context["history"] = st.session_state.messages[-10:]
             with st.chat_message("user"):
                 st.markdown(message)
             st.session_state.messages.append({"role": "user", "text": message})
@@ -147,7 +164,7 @@ if section == "Агент":
                             result = CampusPulseAgent(project=project if backend == "Vertex AI" else None,
                                                       location=os.getenv("GOOGLE_CLOUD_LOCATION", "global"), model=model).query(message, context)
                     except Exception as error:
-                        result = {"answer": clean_error(error), "events": [], "ok": False}
+                        result = {"answer": clean_error(error, "agent_engine" if backend == "Agent Engine" else "vertex" if backend == "Vertex AI" else "gemini"), "events": [], "ok": False}
                     status.update(label="Ответ готов" if result.get("ok") else "Запрос требует внимания",
                                   state="complete" if result.get("ok") else "error", expanded=False)
                 st.markdown(result["answer"])
@@ -161,7 +178,7 @@ if section == "Агент":
         if st.session_state.messages and st.button("Очистить разговор", icon=":material/restart_alt:"):
             st.session_state.messages = []
             st.rerun()
-        st.caption("Каждый запрос использует текущие задачи и материалы. История сообщений отображается в интерфейсе, но не передаётся модели.")
+        st.caption("Агент учитывает текущие задачи, материалы и последние 10 сообщений (до 2000 символов каждое). Очистка разговора удаляет контекст переписки.")
 
 elif section == "Учебный план":
     st.title("Освободи время для главного.")
@@ -252,10 +269,23 @@ else:
     st.json({"project": project or "не задан", "model": model, "model_location": os.getenv("GOOGLE_CLOUD_LOCATION", "global"),
              "agent_engine": resource or "не развёрнут", "mcp_transport": "stdio", "tools": 6})
     st.caption("Наличие настроек не означает, что соединение проверено. Успешный ответ в чате подтверждает доступ для данного запроса.")
+    if connection_problem:
+        st.warning(connection_problem)
+    if st.button("Проверить бесплатный Gemini", disabled=not os.getenv("GEMINI_API_KEY")):
+        with st.spinner("Проверяю Gemini API и вызов MCP…"):
+            result = CampusPulseAgent(model=model).query("Проверь текущее время через инструмент. Ответь одним предложением.", {"timezone": timezone})
+        if result.get("ok"):
+            st.success(result["answer"])
+        else:
+            st.error(result["answer"])
+        show_trace(result, "connection")
     if st.button("Проверить MCP", type="primary"):
-        result = asyncio.run(run_tool("get_current_time", {"timezone": timezone}))
-        st.success("MCP-сервер ответил")
-        st.json(result["output"])
+        try:
+            result = asyncio.run(run_tool("get_current_time", {"timezone": timezone}))
+            (st.success if result["ok"] else st.error)(result["answer"])
+            st.json(result["output"])
+        except Exception as error:
+            st.error(clean_error(error))
     st.subheader("Ограничения прототипа")
     st.markdown("- GitHub: открытые задачи из первой страницы API, до 30 результатов.\n- Дедлайны извлекаются из `Due: YYYY-MM-DD` или milestone.\n- Поиск по конспектам работает по ключевым словам.\n- В плане нет автоматического импорта расписания пар.\n- Агент ограничен 8 шагами, файлы и задачи живут только в сессии.\n- Журнал показывает вызовы инструментов и их результаты.")
     st.link_button("Консоль проекта Google Cloud", f"https://console.cloud.google.com/home/dashboard?project={project}")

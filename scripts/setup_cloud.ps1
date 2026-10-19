@@ -1,6 +1,13 @@
 param([Parameter(Mandatory=$true)][string]$ProjectId)
 $ErrorActionPreference = 'Stop'
-gcloud services enable aiplatform.googleapis.com storage.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com --project $ProjectId
+$DeploymentServices = @(
+    'aiplatform.googleapis.com', 'storage.googleapis.com',
+    'cloudbuild.googleapis.com', 'artifactregistry.googleapis.com',
+    'logging.googleapis.com', 'monitoring.googleapis.com',
+    'telemetry.googleapis.com', 'cloudtrace.googleapis.com',
+    'cloudresourcemanager.googleapis.com'
+)
+gcloud services enable @DeploymentServices --project $ProjectId
 if ($LASTEXITCODE -ne 0) { throw 'API setup failed. Check billing and permissions.' }
 gcloud auth application-default set-quota-project $ProjectId
 if ($LASTEXITCODE -ne 0) { throw 'Set up application-default credentials first.' }

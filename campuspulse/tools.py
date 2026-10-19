@@ -5,7 +5,7 @@ import base64
 import math
 import os
 import re
-from datetime import datetime, timedelta, time
+from datetime import UTC, datetime, timedelta, time
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -30,7 +30,7 @@ def current_time(timezone: str = "Asia/Almaty") -> dict:
 
 def deadline_status(due_at: str, timezone: str = "Asia/Almaty") -> dict:
     due = parse_due(due_at, timezone)
-    minutes = math.floor((due - now_in(timezone)).total_seconds() / 60)
+    minutes = math.floor((due.astimezone(UTC) - now_in(timezone).astimezone(UTC)).total_seconds() / 60)
     return {"due_at": due.isoformat(), "minutes_remaining": minutes,
             "overdue": minutes < 0, "timezone": timezone,
             "date_only_policy": "A date without a time means 23:59 in the selected timezone."}
@@ -107,12 +107,16 @@ def github_readme(repository: str) -> dict:
 
 
 def search_materials(query: str, documents: list[dict]) -> dict:
-    terms = set(re.findall(r"[\w-]{3,}", query.lower()))
+    # Keep short course names such as AI and C++, without matching AI inside a word.
+    terms = {term for term in re.findall(r"\w+(?:[+#]+)?", query.lower()) if len(term) >= 2}
+    patterns = [re.compile(r"(?<!\w)" + re.escape(term) + r"(?!\w)")
+                if len(term) <= 2 or term.endswith(("+", "#")) else re.compile(re.escape(term))
+                for term in terms]
     passages = []
     for document in documents:
         for offset in range(0, len(document["text"]), 900):
             passage = document["text"][offset:offset + 1200]
-            score = sum(passage.lower().count(term) for term in terms)
+            score = sum(len(pattern.findall(passage.lower())) for pattern in patterns)
             if score:
                 passages.append({"source": document["name"], "excerpt": passage, "score": score,
                                  "character_offset": offset})
@@ -123,40 +127,47 @@ def search_materials(query: str, documents: list[dict]) -> dict:
 
 def build_plan(tasks: list[dict], daily_minutes: int = 120, days: int = 7,
                timezone: str = "Asia/Almaty", start_hour: int = 18) -> dict:
-    if not 1 <= len(tasks) <= 30:
+    if not isinstance(tasks, list) or not 1 <= len(tasks) <= 30:
         raise ValueError("Добавь от 1 до 30 задач.")
-    if not 15 <= daily_minutes <= 480 or not 1 <= days <= 14 or not 0 <= start_hour <= 23:
+    if (any(not isinstance(value, int) or isinstance(value, bool) for value in (daily_minutes, days, start_hour))
+            or not 15 <= daily_minutes <= 480 or not 1 <= days <= 14 or not 0 <= start_hour <= 23):
         raise ValueError("Некорректный бюджет времени, горизонт или час начала.")
     current = now_in(timezone)
+    current_utc = current.astimezone(UTC)
     prepared = []
     for index, task in enumerate(tasks):
-        title = str(task.get("title", "")).strip()[:200]
+        if not isinstance(task, dict) or not isinstance(task.get("title"), str):
+            raise ValueError("У каждой задачи должно быть текстовое название.")
+        title = task["title"].strip()[:200]
         if not title:
             raise ValueError("У каждой задачи должно быть название.")
         estimate = task.get("estimated_minutes")
         estimate_default = estimate is None
-        estimate = 60 if estimate_default else int(estimate)
-        if not 1 <= estimate <= 10080:
+        estimate = 60 if estimate_default else estimate
+        if not isinstance(estimate, int) or isinstance(estimate, bool) or not 1 <= estimate <= 10080:
             raise ValueError("Оценка задачи должна быть от 1 до 10080 минут.")
         due = parse_due(str(task["due_at"]), timezone) if task.get("due_at") else None
         prepared.append({"id": index, "title": title, "due": due, "estimate": estimate,
                          "estimated_by_default": estimate_default, "source_url": task.get("source_url")})
-    prepared.sort(key=lambda t: (t["due"] or datetime.max.replace(tzinfo=current.tzinfo), t["id"]))
+    prepared.sort(key=lambda t: (t["due"].astimezone(UTC) if t["due"] else datetime.max.replace(tzinfo=UTC), t["id"]))
     slots = []
     for offset in range(days):
         date = current.date() + timedelta(days=offset)
-        start = datetime.combine(date, time(start_hour), current.tzinfo)
-        end = min(start + timedelta(minutes=daily_minutes), datetime.combine(date + timedelta(days=1), time(), current.tzinfo))
-        if start < current:
-            start = current.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        start = datetime.combine(date, time(start_hour), current.tzinfo).astimezone(UTC)
+        midnight = datetime.combine(date + timedelta(days=1), time(), current.tzinfo).astimezone(UTC)
+        end = min(start + timedelta(minutes=daily_minutes), midnight)
+        if start < current_utc:
+            start = current_utc.replace(second=0, microsecond=0)
+            if start < current_utc:
+                start += timedelta(minutes=1)
             start += timedelta(minutes=(-start.minute) % 15)
         if start < end:
             slots.append([start, end])
     sessions, unscheduled = [], []
     for task in prepared:
         remaining = task["estimate"]
-        due = task["due"]
-        if due and due <= current:
+        due = task["due"].astimezone(UTC) if task["due"] else None
+        if due and due <= current_utc:
             unscheduled.append({"title": task["title"], "minutes": remaining, "reason": "deadline_passed"})
             continue
         for slot in slots:
@@ -167,9 +178,10 @@ def build_plan(tasks: list[dict], daily_minutes: int = 120, days: int = 7,
                 if duration <= 0:
                     break
                 end = slot[0] + timedelta(minutes=duration)
-                sessions.append({"title": task["title"], "start": slot[0].isoformat(), "end": end.isoformat(),
+                sessions.append({"title": task["title"], "start": slot[0].astimezone(current.tzinfo).isoformat(),
+                                 "end": end.astimezone(current.tzinfo).isoformat(),
                                  "minutes": duration, "source_url": task["source_url"],
-                                 "due_at": due.isoformat() if due else None,
+                                 "due_at": task["due"].isoformat() if due else None,
                                  "estimated_by_default": task["estimated_by_default"]})
                 slot[0] = end
                 remaining -= duration
@@ -177,7 +189,7 @@ def build_plan(tasks: list[dict], daily_minutes: int = 120, days: int = 7,
                 break
         if remaining:
             unscheduled.append({"title": task["title"], "minutes": remaining, "reason": "not_enough_time_before_deadline_or_horizon"})
-    sessions.sort(key=lambda s: s["start"])
+    sessions.sort(key=lambda s: datetime.fromisoformat(s["start"]).astimezone(UTC))
     return {"sessions": sessions, "unscheduled": unscheduled, "timezone": timezone,
             "scheduled_minutes": sum(x["minutes"] for x in sessions),
             "requested_minutes": sum(x["estimate"] for x in prepared),

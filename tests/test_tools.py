@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 import asyncio
 
@@ -57,6 +57,43 @@ def test_midnight_window_never_spills_to_next_day(clock):
     assert result["unscheduled"][0]["minutes"] == 180
 
 
+def test_current_quarter_hour_is_not_discarded(monkeypatch):
+    instant = datetime(2026, 10, 19, 18, 15, tzinfo=ZoneInfo("Asia/Almaty"))
+    monkeypatch.setattr(tools, "now_in", lambda timezone: instant)
+    result = tools.build_plan([{"title": "Available now", "estimated_minutes": 45}],
+                              daily_minutes=60, days=1, start_hour=18)
+    assert result["scheduled_minutes"] == 45
+    assert datetime.fromisoformat(result["sessions"][0]["start"]) == instant
+
+
+@pytest.mark.parametrize("estimate", [1.9, True, "60", -1, 0])
+def test_invalid_effort_does_not_get_silently_truncated(clock, estimate):
+    with pytest.raises(ValueError, match="Оценка"):
+        tools.build_plan([{"title": "Effort", "estimated_minutes": estimate}])
+
+
+def test_daylight_saving_uses_elapsed_minutes_for_budget_and_deadline(monkeypatch):
+    instant = datetime(2026, 10, 25, 0, tzinfo=ZoneInfo("Europe/Paris"))
+    monkeypatch.setattr(tools, "now_in", lambda timezone: instant)
+    assert tools.deadline_status("2026-10-25T03:00:00+01:00", "Europe/Paris")["minutes_remaining"] == 240
+    result = tools.build_plan([{"title": "Clock change", "estimated_minutes": 180}],
+                              daily_minutes=180, days=1, start_hour=1, timezone="Europe/Paris")
+    assert result["scheduled_minutes"] == 180
+    assert sum((datetime.fromisoformat(s["end"]).astimezone(UTC)
+                - datetime.fromisoformat(s["start"]).astimezone(UTC)).total_seconds() / 60
+               for s in result["sessions"]) == 180
+    assert datetime.fromisoformat(result["sessions"][-1]["end"]).hour == 3
+
+
+@pytest.mark.parametrize("query,content", [("AI", "AI is the topic of this course."),
+                                          ("C++", "C++ supports classes and templates."),
+                                          ("C#", "This course covers C# programming.")])
+def test_short_technical_course_names_are_searchable(query, content):
+    result = tools.search_materials(query, [{"name": "course.txt", "text": content}])
+    assert result["matches"][0]["excerpt"] == content
+    assert tools.search_materials("AI", [{"name": "other.txt", "text": "Available training"}])["matches"] == []
+
+
 @pytest.mark.parametrize("repo", ["https://evil.test/x/y", "../../secrets", "a/b/issues", "a/b?token=x", "https://github.com.evil.test/a/b"])
 def test_arbitrary_url_rejected(repo):
     with pytest.raises(ValueError):
@@ -80,6 +117,13 @@ def test_ics_uses_utc_and_escapes_text(clock):
     assert r"Тест\; с запятой\, и\nновой строкой" in text
     assert text.count("BEGIN:VEVENT") == len(plan["sessions"])
     assert all(len(line.encode()) <= 75 for line in text.split("\r\n"))
+
+
+@pytest.mark.parametrize("start,end", [("2026-10-19T18:00:00", "2026-10-19T19:00:00"),
+                                      ("2026-10-19T18:00:00Z", "2026-10-19T17:00:00Z")])
+def test_ics_rejects_ambiguous_or_reversed_times(start, end):
+    with pytest.raises(ValueError):
+        to_ics({"sessions": [{"title": "Invalid", "start": start, "end": end}]})
 
 
 def test_real_mcp_transport_and_material_isolation():

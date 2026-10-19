@@ -5,7 +5,7 @@
 ## Ссылки для сдачи
 
 - [Репозиторий проекта](https://github.com/X-0mEGa-X/campuspulse-ai)
-- [Презентация, 8 слайдов](output/presentation/CampusPulse-AI.pptx)
+- [Презентация, 8 слайдов](output/presentation/CampusPulse-AI-v2.pptx)
 - [Скачать исходники ZIP](https://github.com/X-0mEGa-X/campuspulse-ai/archive/refs/heads/main.zip)
 - [Сценарий демонстрации](docs/DEMO.md)
 
@@ -13,19 +13,21 @@
 
 ## Что готово
 
-- Чат с Gemini 3.8 Flash через бесплатный Gemini Developer API или Vertex AI.
+- Чат с Gemini 3.5 Flash-Lite через бесплатный Gemini Developer API или Vertex AI.
 - Шесть MCP-инструментов: время, дедлайн, GitHub Issues, README, поиск по материалам, планирование.
 - Задачи с дедлайнами, дневной бюджет времени, расписание и экспорт `.ics`.
 - Загрузка PDF/TXT/MD и поиск по содержимому с названием источника.
 - Режим «Только инструменты» для проверки MCP без LLM.
 - Скрипт развёртывания через `reasoning_engines.ReasoningEngine.create` и клиент удалённого агента.
-- 16 автоматических тестов, включая реальные MCP subprocess-сессии и Streamlit AppTest.
+- 38 автоматических тестов, включая реальные MCP subprocess-сессии и Streamlit AppTest.
 
-**Статус на 19.10.2026:** локальный Gemini и вызовы MCP проверены. Журнал реального запроса находится в `docs/live-run.json`. GitHub API в последней проверке вернул rate limit, и агент явно сообщил об ошибке. Ранее прямой MCP-запрос к GitHub был успешен. **Agent Engine не развёрнут:** Google Cloud требует активный биллинг, который в текущем проекте не удалось подключить. Наличие deploy-скрипта не является подтверждением облачного развёртывания.
+**Статус на 19.10.2026 после повторного аудита:** бесплатный Gemini 3.5 Flash-Lite и четыре реальных MCP-вызова успешно проверены: время, свежий README `python/cpython` (HTTP 200), поиск в тестовом конспекте, план на 120 минут. Журнал — `docs/live-run.json`. В браузере дополнительно проверен план на 180 минут. 38 автотестов прошли. **Agent Engine не развёрнут:** Google Cloud требует активный биллинг, который в текущем проекте не удалось подключить. Это остаётся невыполненным обязательным требованием кейса; deploy-скрипт его не заменяет.
+
+Gemini 3.8 Flash при повторной проверке вернул HTTP 503 — перегрузку сервиса, а не требование оплаты. Поэтому локальная конфигурация переключена на проверенный `gemini-3.5-flash-lite`. По умолчанию выбран бесплатный API, облачные режимы доступны через отдельный переключатель. Ошибки доступа, квот, сети и перегрузки объясняются отдельно.
 
 ## Быстрый запуск
 
-Нужен Python 3.12. На подготовленном компьютере достаточно открыть `START-CampusPulse.cmd`.
+Нужен Python 3.12. На подготовленном компьютере достаточно открыть `START-CampusPulse.cmd` и оставить окно запуска открытым. Если приложение уже работает, скрипт сообщит адрес. Перезагрузка компьютера останавливает локальный сервер — запусти этот файл снова.
 
 ```powershell
 python -m venv .venv
@@ -64,7 +66,19 @@ Copy-Item .env.example .env
 
 ## Agent Engine после получения проекта с биллингом
 
-Нужны Google Cloud CLI, активный биллинг, права включать API и создавать ресурсы Vertex AI / Cloud Storage. Запуск следующего раздела может создавать платные ресурсы. Текущий локальный Gemini API этого не требует.
+Нужны Google Cloud CLI и проект с активным биллингом. Запуск следующего раздела может создавать платные ресурсы. Текущий локальный Gemini API этого не требует.
+
+Права пользователя, выполняющего настройку и deployment:
+
+| Действие | IAM-доступ |
+|---|---|
+| Включить API | `roles/serviceusage.serviceUsageAdmin` на проекте |
+| Создать и вызвать агента | `roles/aiplatform.user` на проекте |
+| Создать staging bucket и загрузить пакет | `roles/storage.admin` на проекте; для заранее созданного bucket достаточно доступа к этому bucket |
+| Прочитать проект и статус биллинга | `resourcemanager.projects.get`, например через `roles/browser`, если право не входит в уже выданные роли |
+| Назначить quota project для ADC | `serviceusage.services.use`, например через `roles/serviceusage.serviceUsageConsumer`, если право ещё не выдано |
+
+Администратор может предоставить эквивалентные custom roles. Скрипты не назначают IAM-роли и не подключают оплату. Для runtime используется стандартный Google-managed Reasoning Engine Service Agent с ролью `roles/aiplatform.reasoningEngineServiceAgent`; эту служебную роль не назначают пользователю. Официальные инструкции: [Agent Runtime setup](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime/setup), [доступ к проверке биллинга](https://docs.cloud.google.com/billing/docs/access-control).
 
 ```powershell
 gcloud auth application-default login
@@ -75,7 +89,9 @@ gcloud auth application-default set-quota-project PROJECT_ID
 .\.venv\Scripts\python.exe scripts/smoke_cloud.py
 ```
 
-Регион runtime по умолчанию `us-central1`, endpoint модели `global`. Deploy создаёт закрытый staging bucket с uniform bucket access и упаковывает `campuspulse`. Реальное имя ресурса сохраняется в игнорируемый `deployment.json`. После успешного smoke-теста переключи UI на Agent Engine. Ключ Gemini Developer API в облачный пакет не включается. Текущий скрипт подготовлен и проверен в dry-run, но создание runtime ещё не проверено.
+Регион runtime по умолчанию `us-central1`, endpoint модели `global`. Deploy создаёт закрытый staging bucket с uniform bucket access и упаковывает `campuspulse`. Реальное имя ресурса сохраняется в игнорируемый `deployment.json`. После успешного smoke-теста включи «Показать режимы Google Cloud» и переключи UI на Agent Engine. Ключ Gemini Developer API в облачный пакет не включается. Текущий скрипт подготовлен и проверен в dry-run, но создание runtime ещё не проверено.
+
+`configure_cloud.py` сначала проверяет биллинг, затем включает Resource Manager до запроса номера проекта. Оба setup-скрипта включают API для Agent Engine, Cloud Storage, сборки и наблюдаемости: Cloud Build, Artifact Registry, Logging, Monitoring, Telemetry и Cloud Trace. Вариант `scripts/setup_cloud.ps1 -ProjectId PROJECT_ID` использует отдельный вход Google Cloud CLI (`gcloud auth login`); Python-скрипт из примера использует ADC.
 
 `Dockerfile` позволяет отдельно разместить UI на хостинге с поддержкой контейнеров. Публичный сайт в этой поставке не опубликован. Перед открытым доступом нужны аутентификация, квоты на пользователя и управление секретами.
 
@@ -94,7 +110,7 @@ gcloud auth application-default set-quota-project PROJECT_ID
 
 - До 30 задач, до 5 документов по 5 МБ. Из PDF читаются первые 40 страниц и до 12 000 символов на документ. OCR не включён.
 - Поиск по материалам лексический. Документы и задачи хранятся только в текущей сессии, без базы данных.
-- История чата видна в UI, но запрос модели получает только текущие задачи, материалы и текст нового запроса.
+- Модель получает текущие задачи и материалы, новый запрос и до 10 последних сообщений по 2000 символов. Полный журнал инструментов в историю не копируется; «Очистить разговор» сбрасывает контекст переписки.
 - GitHub: открытые Issues из первой страницы API (100 элементов, включая PR), до 30 Issues. Срок извлекается из `Due: YYYY-MM-DD`, `Deadline: ...`, `Дедлайн: ...`, `Срок: ...` или milestone.
 - Неизвестные сроки остаются неизвестными. Если оценка времени отсутствует, планировщик использует 60 минут и помечает допущение.
 - Учебные окна фиксированы по выбранному началу и бюджету. Пары, личные события, праздники и перерывы автоматически не импортируются.

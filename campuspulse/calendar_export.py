@@ -21,8 +21,14 @@ def to_ics(plan: dict) -> bytes:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//CampusPulse//Study Plan//RU", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"]
     for session in plan.get("sessions", []):
-        start = datetime.fromisoformat(session["start"]).astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        end = datetime.fromisoformat(session["end"]).astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        start_time, end_time = (datetime.fromisoformat(session[key]) for key in ("start", "end"))
+        if start_time.tzinfo is None or end_time.tzinfo is None:
+            raise ValueError("Для экспорта в календарь время должно содержать часовой пояс.")
+        start_time, end_time = start_time.astimezone(timezone.utc), end_time.astimezone(timezone.utc)
+        if end_time <= start_time:
+            raise ValueError("Окончание учебной сессии должно быть позже начала.")
+        start = start_time.strftime("%Y%m%dT%H%M%SZ")
+        end = end_time.strftime("%Y%m%dT%H%M%SZ")
         uid = hashlib.sha256(f"{start}-{session['title']}".encode()).hexdigest()[:24]
         lines += ["BEGIN:VEVENT", f"UID:{uid}@campuspulse", f"DTSTAMP:{stamp}", f"DTSTART:{start}", f"DTEND:{end}",
                   "SUMMARY:" + escape(session["title"]), "DESCRIPTION:" + escape("Учебный план CampusPulse. " + (session.get("source_url") or "Введено пользователем.")), "END:VEVENT"]

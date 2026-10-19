@@ -32,11 +32,16 @@ with AuthorizedSession(credentials) as session:
     print("BILLING_ENABLED:", billing.json().get("billingEnabled", False))
     if not billing.json().get("billingEnabled"):
         raise SystemExit("Project has no active billing account. Link an active billing account in the Cloud console.")
+    # Resolve the project number only after its API is available in a fresh project.
+    response = session.post(f"https://serviceusage.googleapis.com/v1/projects/{args.project}/services/cloudresourcemanager.googleapis.com:enable", timeout=60)
+    wait_operation(response)
     project = session.get(f"https://cloudresourcemanager.googleapis.com/v1/projects/{args.project}", timeout=30)
     project.raise_for_status()
     number = project.json()["projectNumber"]
     response = session.post(f"https://serviceusage.googleapis.com/v1/projects/{number}/services:batchEnable", json={"serviceIds": [
-        "aiplatform.googleapis.com", "storage.googleapis.com", "cloudbuild.googleapis.com", "artifactregistry.googleapis.com"]}, timeout=60)
+        "aiplatform.googleapis.com", "storage.googleapis.com", "cloudbuild.googleapis.com", "artifactregistry.googleapis.com",
+        "logging.googleapis.com", "monitoring.googleapis.com", "telemetry.googleapis.com", "cloudtrace.googleapis.com",
+        "cloudresourcemanager.googleapis.com"]}, timeout=60)
     response.raise_for_status()
     print("API_ENABLE_OPERATION:", response.json().get("name", "done"))
     wait_operation(response)
