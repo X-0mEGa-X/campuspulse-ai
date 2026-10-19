@@ -5,7 +5,7 @@
 ## Ссылки для сдачи
 
 - [Репозиторий проекта](https://github.com/X-0mEGa-X/campuspulse-ai)
-- [Презентация для защиты, 5 слайдов](output/presentation/CampusPulse-AI-final.pptx)
+- [Презентация для защиты, 5 слайдов](output/presentation/CampusPulse-AI-final-team.pptx)
 - [Скачать исходники ZIP](https://github.com/X-0mEGa-X/campuspulse-ai/archive/refs/heads/main.zip)
 - [Сценарий демонстрации](docs/DEMO.md)
 
