@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 from datetime import datetime, timedelta
@@ -10,9 +11,9 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from campuspulse.agent import CampusPulseAgent, run_tool, clean_error
+from campuspulse.attachments import prepare_attachments, merge_attachments
 from campuspulse.calendar_export import to_ics
 from campuspulse.cloud_client import query_remote
-from campuspulse.documents import extract_document
 from campuspulse.tools import now_in
 
 st.set_page_config(page_title="CampusPulse AI", page_icon=":material/school:", layout="wide")
@@ -24,7 +25,8 @@ if (ROOT / "deployment.json").exists():
 project = os.getenv("GOOGLE_CLOUD_PROJECT", "")
 resource = os.getenv("AGENT_ENGINE_RESOURCE") or deployment.get("resource_name", "")
 model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
-for key, value in {"tasks": [], "documents": [], "messages": [], "last_result": None, "plan": None}.items():
+ATTACHMENT_TYPES = ["pdf", "docx", "txt", "md", "png", "jpg", "jpeg", "webp"]
+for key, value in {"tasks": [], "documents": [], "images": [], "messages": [], "last_result": None, "plan": None}.items():
     st.session_state.setdefault(key, value)
 
 
@@ -90,7 +92,8 @@ with st.sidebar:
     st.caption("Build with AI · GDG Astana")
 
 context = {"timezone": timezone, "daily_minutes": daily_minutes, "days": 7,
-           "start_hour": start_hour, "tasks": st.session_state.tasks, "documents": st.session_state.documents}
+           "start_hour": start_hour, "tasks": st.session_state.tasks, "documents": st.session_state.documents,
+           "images": st.session_state.images}
 connection_problem = None
 if backend == "Gemini API" and not os.getenv("GEMINI_API_KEY"):
     connection_problem = "Добавь GEMINI_API_KEY из Google AI Studio в .env и перезапусти приложение. Пока можно выбрать «Только инструменты»."
@@ -106,7 +109,7 @@ if section == "Агент":
     with st.container(horizontal=True):
         st.badge(backend, color="blue", icon=":material/cloud:" if backend == "Agent Engine" else ":material/auto_awesome:")
         st.badge(f"{len(st.session_state.tasks)} задач", color="gray")
-        st.badge(f"{len(st.session_state.documents)} материалов", color="gray")
+        st.badge(f"{len(st.session_state.documents) + len(st.session_state.images)} материалов", color="gray")
     repository = st.text_input("Репозиторий курса", placeholder="https://github.com/owner/course", key="repository")
     context["repository"] = repository
     if backend == "Только инструменты":
@@ -146,14 +149,33 @@ if section == "Агент":
         for index, msg in enumerate(st.session_state.messages):
             with st.chat_message(msg["role"]):
                 st.markdown(msg["text"])
+                if msg.get("attachments"):
+                    st.caption("Вложения: " + ", ".join(msg["attachments"]))
                 if msg.get("result"):
                     show_trace(msg["result"], f"message_{index}")
-        if message := st.chat_input("Что нужно успеть на этой неделе?", max_chars=12000,
-                                    disabled=bool(connection_problem), submit_mode="disable"):
+        st.caption("Прикрепи файл или фото кнопкой + у поля сообщения. PDF, DOCX, TXT, MD, JPG, PNG, WebP; до 5 файлов по 5 МБ, не более 3 фото и 10 МБ суммарно. При запросе вложения передаются в Google.")
+        if submission := st.chat_input("Что нужно успеть на этой неделе?", max_chars=12000,
+                                       accept_file="multiple", file_type=ATTACHMENT_TYPES, max_upload_size=5,
+                                       disabled=bool(connection_problem), submit_mode="disable"):
+            message = submission.text.strip() or "Посмотри прикреплённые материалы и кратко объясни, что в них."
+            files = submission.files
+            if files:
+                try:
+                    incoming = prepare_attachments([(file.name, file.getvalue()) for file in files])
+                    merged = merge_attachments({"documents": st.session_state.documents,
+                                                "images": st.session_state.images}, incoming)
+                    st.session_state.documents, st.session_state.images = merged["documents"], merged["images"]
+                    context.update(merged)
+                except ValueError as error:
+                    st.error(str(error))
+                    st.stop()
             context["history"] = st.session_state.messages[-10:]
             with st.chat_message("user"):
                 st.markdown(message)
-            st.session_state.messages.append({"role": "user", "text": message})
+                if files:
+                    st.caption("Вложения: " + ", ".join(file.name for file in files))
+            st.session_state.messages.append({"role": "user", "text": message,
+                                             "attachments": [file.name for file in files]})
             with st.chat_message("assistant"):
                 with st.status("Агент обращается к Gemini и инструментам…", expanded=True) as status:
                     st.caption("Получение ответа может занять до двух минут.")
@@ -177,6 +199,9 @@ if section == "Агент":
             show_plan(st.session_state.plan, "chat")
         if st.session_state.messages and st.button("Очистить разговор", icon=":material/restart_alt:"):
             st.session_state.messages = []
+            st.rerun()
+        if (st.session_state.documents or st.session_state.images) and st.button("Убрать все вложения", icon=":material/close:"):
+            st.session_state.documents, st.session_state.images = [], []
             st.rerun()
         st.caption("Агент учитывает текущие задачи, материалы и последние 10 сообщений (до 2000 символов каждое). Очистка разговора удаляет контекст переписки.")
 
@@ -226,17 +251,18 @@ elif section == "Учебный план":
 
 elif section == "Материалы":
     st.title("Конспекты, которые помогают.")
-    st.markdown("Загрузи PDF, TXT или Markdown. Агент сможет найти нужный фрагмент и объяснить тему со ссылкой на источник.")
-    st.caption("До 5 файлов по 5 МБ. Из PDF читаются первые 40 страниц, из каждого файла — до 12000 символов. OCR для сканов не включён.")
-    uploaded = st.file_uploader("Учебные материалы", type=["pdf", "txt", "md"], accept_multiple_files=True)
-    st.caption("Материалы хранятся в памяти сессии. При запросе к Gemini текст передаётся в Google. Используй материалы, которыми можно делиться.")
+    st.markdown("Загрузи PDF, DOCX, TXT, Markdown или фото. Текст доступен для поиска, а фотографии Gemini рассматривает непосредственно в чате.")
+    st.caption("До 5 файлов по 5 МБ, до 3 фото и 10 МБ суммарно. Из PDF читаются первые 40 страниц, из текстовых файлов — до 12000 символов. Страницы сканированного PDF приложи как JPG или PNG. HEIC нужно сначала сохранить как JPG.")
+    uploaded = st.file_uploader("Учебные материалы", type=ATTACHMENT_TYPES, accept_multiple_files=True, max_upload_size=5)
+    st.caption("Материалы хранятся в памяти сессии. При запросе текст и фотографии передаются в Google. Кнопка ниже заменяет текущий набор материалов.")
     if st.button("Использовать выбранные материалы", disabled=not uploaded, type="primary"):
         if len(uploaded) > 5:
             st.error("Выбери не более 5 файлов.")
         else:
             try:
-                st.session_state.documents = [extract_document(f.name, f.getvalue()) for f in uploaded]
-                st.success("Материалы готовы для поиска.")
+                prepared = prepare_attachments([(f.name, f.getvalue()) for f in uploaded])
+                st.session_state.documents, st.session_state.images = prepared["documents"], prepared["images"]
+                st.success("Материалы добавлены. Перейди в «Агент» и задай вопрос; файлы повторно прикреплять не нужно.")
             except Exception as error:
                 st.error(f"Не удалось прочитать файл: {error}")
     for doc in st.session_state.documents:
@@ -244,6 +270,11 @@ elif section == "Материалы":
             if doc["truncated"]:
                 st.warning("Используется только начало документа из-за ограничения объёма.")
             st.text(doc["text"][:3000])
+    for photo in st.session_state.images:
+        with st.expander(photo["name"], icon=":material/image:"):
+            st.image(base64.b64decode(photo["data"]), width="stretch", alt=f"Прикреплённое изображение {photo['name']}")
+    if st.session_state.images:
+        st.info("Вопросы по фотографиям задавай в разделе «Агент». Поиск ниже работает только по текстовым документам.")
     query = st.text_input("Проверить поиск по материалам", placeholder="Например: алгоритм Дейкстры")
     if st.button("Найти через MCP", disabled=not query or not st.session_state.documents):
         try:
@@ -258,8 +289,8 @@ elif section == "Материалы":
             show_trace(result, "materials")
         except Exception as error:
             st.error(clean_error(error))
-    if st.session_state.documents and st.button("Убрать материалы из сессии"):
-        st.session_state.documents = []
+    if (st.session_state.documents or st.session_state.images) and st.button("Убрать материалы из сессии"):
+        st.session_state.documents, st.session_state.images = [], []
         st.rerun()
 
 else:

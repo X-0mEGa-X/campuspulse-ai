@@ -3,7 +3,7 @@
 ```mermaid
 flowchart LR
   UI[Streamlit] --> A[CampusPulseAgent]
-  A <--> G[Gemini: function calling]
+  A <--> G[Gemini: function calling и изображения]
   A <-->|stdio: tools/list, tools/call| MCP[FastMCP subprocess]
   MCP --> GH[GitHub REST API]
   MCP --> D[Материалы в памяти сессии]
@@ -19,7 +19,7 @@ flowchart LR
 ## Цикл агента
 
 1. Клиент запускает новый MCP-процесс и выполняет initialize.
-2. Документы загружаются в память процесса. Модель получает только названия документов до вызова поиска.
+2. Текст PDF/DOCX/TXT/MD загружается в память процесса. Модель получает названия документов до вызова поиска. Проверенные PNG/JPEG/WebP отправляются непосредственно Gemini как inline_data с фактическим MIME-типом; в MCP и журналы байты фотографий не попадают.
 3. Схемы шести инструментов берутся через `tools/list`.
 4. Gemini возвращает ответ или `function_call`.
 5. Приложение вызывает соответствующий MCP-tool и добавляет `function_response` в диалог модели. Сохраняются thought signatures, но скрытый reasoning не выводится.

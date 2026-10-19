@@ -1,0 +1,39 @@
+{
+  "answer": "По данным из прикрепленных материалов:\n\n* **На скриншоте (`plan.png`):** запланировано **180 минут** и **4 учебных блока** (согласно сводке на изображении).\n* **В текстовом файле (`upload-check.txt`):** код лабораторной работы — **ORBIT-726** (выдержка: *\"Код лабораторной работы: ORBIT-726. По курсу нужно повторить алгоритм Дейкстры\"*).\n\n**Источники:** `plan.png`, `upload-check.txt`.",
+  "events": [
+    {
+      "kind": "connect",
+      "title": "MCP подключён",
+      "tool_count": 6,
+      "transport": "stdio"
+    },
+    {
+      "kind": "tool",
+      "step": 1,
+      "name": "search_study_materials",
+      "arguments": {
+        "query": "лабораторная код"
+      },
+      "output": {
+        "matches": [
+          {
+            "source": "upload-check.txt",
+            "excerpt": "Учебная проверка загрузки. Код лабораторной работы: ORBIT-726. По курсу нужно повторить алгоритм Дейкстры.",
+            "score": 1,
+            "character_offset": 0
+          }
+        ],
+        "method": "lexical keyword retrieval",
+        "documents_count": 1,
+        "note": "No matches means no evidence. Do not invent document contents."
+      },
+      "ok": true,
+      "duration_ms": 16
+    }
+  ],
+  "plan": null,
+  "sources": [],
+  "ok": true,
+  "mode": "gemini",
+  "model": "gemini-3.5-flash-lite"
+}

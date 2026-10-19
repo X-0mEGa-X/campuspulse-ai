@@ -1,5 +1,8 @@
 """Protocol regression with a controlled model and the real subprocess MCP server."""
 from types import SimpleNamespace
+import base64
+
+import pytest
 
 from google.genai import types
 
@@ -85,3 +88,40 @@ def test_plan_citations_are_grounded_in_actual_task_evidence():
     ambiguous = agent.ground_task_sources(arguments, [{"title": "My lab"},
                         {"title": "My lab", "source_url": "https://github.com/other/course/issues/2"}])
     assert ambiguous["tasks"][0]["source_url"] is None
+
+
+def test_images_reach_the_model_as_bytes_without_entering_the_trace(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-real")
+    image_bytes = b"test-image-payload-for-protocol"
+    class Models:
+        async def generate_content(self, **kwargs):
+            parts = kwargs["contents"][-1].parts
+            assert parts[-1].inline_data.data == image_bytes
+            assert parts[-1].inline_data.mime_type == "image/png"
+            assert 'lecture.png' in parts[-2].text
+            return types.GenerateContentResponse(candidates=[types.Candidate(content=types.Content(
+                role="model", parts=[types.Part(text="Изображение получено.")]))])
+    class AsyncClient:
+        models = Models()
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return False
+    monkeypatch.setattr(agent.genai, "Client", lambda **kwargs: SimpleNamespace(aio=AsyncClient()))
+    encoded = base64.b64encode(image_bytes).decode()
+    result = agent.CampusPulseAgent().query("Что на изображении?", {"images": [
+        {"name": "lecture.png", "mime_type": "image/png", "data": encoded}]})
+    assert result["ok"]
+    assert encoded not in str(result)
+    assert "test-image-payload" not in str(result)
+
+
+@pytest.mark.parametrize("images", [
+    [{"mime_type": "text/html", "data": "YQ=="}],
+    [{"mime_type": "image/png", "data": "not-base64!"}],
+    [{"mime_type": "image/png", "data": ""}],
+    [{}] * 4,
+])
+def test_invalid_inline_images_are_rejected(images):
+    with pytest.raises(ValueError):
+        agent.image_content_parts(images)
