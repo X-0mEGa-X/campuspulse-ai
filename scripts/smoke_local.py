@@ -1,4 +1,5 @@
 """Opt-in live free Gemini + actual MCP smoke; fails on missing/failed tools."""
+import argparse
 import json
 import os
 import sys
@@ -11,6 +12,9 @@ from campuspulse.agent import CampusPulseAgent
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, help="Save this actual run as JSON (default: tmp/smoke-local.json).")
+    args = parser.parse_args()
     load_dotenv(ROOT / ".env")
     agent = CampusPulseAgent(model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"))
     result = agent.query(
@@ -27,15 +31,26 @@ def main():
     required = {"get_current_time", "read_github_readme", "search_study_materials", "plan_study_week"}
     successful = {event["name"] for event in tools if event["ok"]}
     plan = result.get("plan") or {}
+    readme_verified = any(event["name"] == "read_github_readme" and event["ok"]
+                          and event["output"].get("live") is True
+                          and event["output"].get("repository") == "python/cpython"
+                          and bool(event["output"].get("text", "").strip()) for event in tools)
+    material_verified = any(event["name"] == "search_study_materials" and event["ok"]
+                            and any(match.get("source") == "smoke-test-notes.txt" and "MCP" in match.get("excerpt", "")
+                                    for match in event["output"].get("matches", [])) for event in tools)
     passed = bool(result.get("ok") and required <= successful and all(event["ok"] for event in tools)
+                  and readme_verified and material_verified
                   and plan.get("scheduled_minutes") == 120 and not plan.get("unscheduled"))
     result["verification"] = {"passed": passed, "required_tools": sorted(required),
                               "missing_successful_tools": sorted(required - successful),
+                              "live_readme_verified": readme_verified, "material_excerpt_verified": material_verified,
                               "test_data": "Two explicit smoke-test tasks and a short test note; README is fetched live."}
     print(json.dumps({"passed": passed, "model": result.get("model"), "answer": result["answer"],
                       "tools": [{"name": e["name"], "ok": e["ok"]} for e in tools]}, ensure_ascii=False, indent=2))
-    destination = ROOT / "docs" / "live-run.json" if passed else ROOT / "tmp" / "failed-live-run.json"
-    destination.parent.mkdir(exist_ok=True)
+    destination = args.output or ROOT / "tmp" / "smoke-local.json"
+    if not destination.is_absolute():
+        destination = ROOT / destination
+    destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return 0 if passed else 1
 

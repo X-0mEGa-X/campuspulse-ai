@@ -23,7 +23,7 @@ def main():
     parser.add_argument("--project", default=os.getenv("GOOGLE_CLOUD_PROJECT"))
     parser.add_argument("--region", default=os.getenv("AGENT_ENGINE_LOCATION", "us-central1"))
     parser.add_argument("--bucket", default=os.getenv("STAGING_BUCKET"))
-    parser.add_argument("--model", default=os.getenv("GEMINI_MODEL", "gemini-3.8-flash"))
+    parser.add_argument("--model", default=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"))
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     if not args.project:

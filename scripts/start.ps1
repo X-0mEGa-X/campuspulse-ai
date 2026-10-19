@@ -15,7 +15,7 @@ if (-not (Test-Path -LiteralPath '.venv\Scripts\python.exe')) {
 $dependencyCheck = @'
 import sys
 try:
-    import streamlit, google.genai, vertexai, mcp, httpx, pypdf, dotenv, tzdata
+    import streamlit, google.genai, vertexai, mcp, httpx, pypdf, dotenv, tzdata, PIL
 except ImportError:
     sys.exit(1)
 '@

@@ -6,8 +6,9 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 files = [ROOT / name for name in (
     "README.md", ".env.example", ".gitignore", ".dockerignore", "Dockerfile",
-    "app.py", "requirements.txt", "requirements-dev.txt", "pytest.ini", "mcp.json", "START-CampusPulse.cmd")]
-for directory in ("campuspulse", "scripts", "tests", "docs", ".streamlit", "output/presentation"):
+    "app.py", "requirements.txt", "requirements-dev.txt", "pytest.ini", "mcp.json", "START-CampusPulse.cmd",
+    "output/presentation/CampusPulse-AI.pptx")]
+for directory in ("campuspulse", "scripts", "tests", "docs", ".streamlit"):
     for file in (ROOT / directory).rglob("*"):
         if file.is_file() and not file.is_symlink() and "__pycache__" not in file.parts and file.name != "secrets.toml":
             files.append(file)

@@ -88,7 +88,7 @@ def rename_chat_dialog():
 def show_trace(result: dict, key: str):
     events = result.get("events", [])
     with st.expander(f"Журнал действий ({sum(e['kind'] == 'tool' for e in events)})", icon=":material/account_tree:"):
-        st.caption("Фактические вызовы и результаты инструментов. Внутренние рассуждения модели не отображаются.")
+        st.caption("Инструменты и результаты этого запроса.")
         tool_number = 0
         for event in events:
             if event["kind"] == "connect":
@@ -103,7 +103,7 @@ def show_trace(result: dict, key: str):
 
 
 def show_plan(plan: dict, key: str):
-    st.subheader("Твой учебный план", icon=":material/calendar_month:")
+    st.subheader("Расписание", icon=":material/calendar_month:")
     a, b, c = st.columns(3)
     a.metric("Запланировано", f"{plan['scheduled_minutes']} мин", border=True)
     b.metric("Учебных блоков", len(plan["sessions"]), border=True)
@@ -126,7 +126,7 @@ def show_plan(plan: dict, key: str):
 
 with st.sidebar:
     st.title("CampusPulse", icon=":material/school:")
-    st.caption("AI study companion")
+    st.caption("Учебный помощник")
     st.button("Новый чат", key="new_chat", icon=":material/add:", type="primary",
               width="stretch", on_click=new_chat, disabled=len(st.session_state.chats) >= MAX_CHATS)
     chat_signature = tuple((chat_id, chat["title"]) for chat_id, chat in st.session_state.chats.items())
@@ -166,7 +166,7 @@ with st.sidebar:
         backend = st.selectbox("Режим работы", backend_options,
                                format_func=lambda option: "Gemini API · бесплатная квота" if option == "Gemini API" else option, key="backend")
         if backend == "Gemini API":
-            st.caption("Прямое подключение к Gemini Flash. Для ключа на бесплатном тарифе действуют квоты. Приложение не подключает биллинг и не переключается на Vertex AI автоматически.")
+            st.caption("Бесплатный тариф Gemini API имеет ограничения на число запросов.")
         timezone = st.selectbox("Часовой пояс", ["Asia/Almaty", "Asia/Astana", "Asia/Bishkek", "UTC", "Europe/Moscow"], key="timezone")
         # Astana is represented by the canonical IANA zone Asia/Almaty.
         timezone = "Asia/Almaty" if timezone == "Asia/Astana" else timezone
@@ -188,9 +188,8 @@ elif backend == "Vertex AI" and not project:
     connection_problem = "Для Vertex AI требуется GOOGLE_CLOUD_PROJECT. Для бесплатного локального чата выбери «Gemini API»."
 
 if section == "Агент":
-    st.caption("ТВОЯ НЕДЕЛЯ ПОД КОНТРОЛЕМ")
-    st.title("Разберёмся с учёбой.")
-    st.markdown("Задания, дедлайны и конспекты — в одном разговоре. Агент обращается к источникам и показывает выполненные действия.")
+    st.title("Учебный помощник")
+    st.markdown("Прикрепи конспект или фото, задай вопрос или попроси составить план.")
     with st.container(horizontal=True):
         st.badge(backend, color="blue", icon=":material/cloud:" if backend == "Agent Engine" else ":material/auto_awesome:")
         st.badge(f"{len(st.session_state.tasks)} задач", color="gray")
@@ -198,7 +197,7 @@ if section == "Агент":
     repository = st.text_input("Репозиторий курса", placeholder="https://github.com/owner/course", key="repository", persist_state="session")
     context["repository"] = repository
     if backend == "Только инструменты":
-        st.info("Gemini в этом режиме не используется. Кнопки ниже вызывают настоящий MCP-сервер по заданному сценарию.")
+        st.info("Проверка MCP-инструментов без запросов к модели.")
         left, right = st.columns(2)
         action = None
         if left.button("Получить задачи из GitHub", icon=":material/code:", width="stretch", disabled=not repository):
@@ -263,7 +262,7 @@ if section == "Агент":
                                              "attachments": [file.name for file in files]})
             with st.chat_message("assistant"):
                 with st.status("Агент обращается к Gemini и инструментам…", expanded=True) as status:
-                    st.caption("Получение ответа может занять до минуты.")
+                    st.caption("Ответ может занять около минуты.")
                     try:
                         if backend == "Agent Engine":
                             result = query_remote(resource, message, context)
@@ -296,7 +295,7 @@ if section == "Агент":
                 st.caption("Чаты хранятся в памяти текущей вкладки и сбрасываются после её закрытия или перезапуска приложения. Очистка чата удаляет только переписку. Через «Ещё» можно переименовать или удалить чат целиком.")
 
 elif section == "Учебный план":
-    st.title("Освободи время для главного.")
+    st.title("Учебный план")
     st.markdown("Добавь задачи для текущего чата. Планировщик распределит работу до дедлайнов и покажет, что не помещается.")
     with st.form(f"add_task_{chat_id}", clear_on_submit=True):
         title = st.text_input("Название задачи", placeholder="Подготовить лабораторную по Python", max_chars=200)
@@ -340,7 +339,7 @@ elif section == "Учебный план":
             show_trace(st.session_state.last_plan_trace, "planner")
 
 elif section == "Материалы":
-    st.title("Конспекты, которые помогают.")
+    st.title("Учебные материалы")
     st.markdown("Загрузи PDF, DOCX, TXT, Markdown или фото. Текст доступен для поиска, а фотографии Gemini рассматривает непосредственно в чате.")
     st.caption("До 5 файлов по 5 МБ, до 3 фото и 10 МБ суммарно. Из PDF читаются первые 40 страниц, из текстовых файлов — до 12000 символов. Страницы сканированного PDF приложи как JPG или PNG. HEIC нужно сначала сохранить как JPG.")
     uploaded = st.file_uploader("Учебные материалы", key=f"materials_{chat_id}", type=ATTACHMENT_TYPES, accept_multiple_files=True, max_upload_size=5)
@@ -409,7 +408,6 @@ else:
             st.error(clean_error(error))
     st.subheader("Ограничения прототипа")
     st.markdown("- GitHub: открытые задачи из первой страницы API, до 30 результатов.\n- Дедлайны извлекаются из `Due: YYYY-MM-DD` или milestone.\n- Поиск по конспектам работает по ключевым словам.\n- В плане нет автоматического импорта расписания пар.\n- Агент ограничен 8 шагами, файлы и задачи живут только в сессии.\n- Журнал показывает вызовы инструментов и их результаты.")
-    st.link_button("Консоль проекта Google Cloud", f"https://console.cloud.google.com/home/dashboard?project={project}")
 
 save_active_chat(st.session_state)
 if st.session_state.get("rename_requested", False):
