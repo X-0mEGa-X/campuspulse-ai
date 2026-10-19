@@ -1,0 +1,9 @@
+.git
+.venv
+.env
+tmp
+output
+tests
+__pycache__
+.streamlit/secrets.toml
+deployment.json

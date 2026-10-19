@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "campuspulse": {
+      "command": "python",
+      "args": ["-m", "campuspulse.mcp_server"],
+      "description": "Run from this repository with its Python virtual environment activated."
+    }
+  }
+}

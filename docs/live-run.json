@@ -1,0 +1,47 @@
+{
+  "answer": "**Текущее время:**\n19 октября 2026 года, 17:11:46 (`Asia/Almaty`, UTC+5).\n\n**Задачи из репозитория `google/adk-python`:**\nНе удалось получить список открытых задач через GitHub API из-за ограничения запросов (rate limit) или отсутствия доступа:\n> *«GitHub ограничил запросы или доступ. Попробуй позже либо настрой read-only GITHUB_TOKEN.»*\n\n**Следующие шаги:**\n- Повторить запрос позже, когда сбросится лимит запросов GitHub API.\n- Либо настроить переменную окружения с read-only токеном `GITHUB_TOKEN` для снятия ограничений на анонимные запросы.\n- При наличии прямого доступа к репозиторию задачи можно посмотреть вручную по ссылке: [google/adk-python Issues](https://github.com/google/adk-python/issues).",
+  "events": [
+    {
+      "kind": "connect",
+      "title": "MCP подключён",
+      "tool_count": 6,
+      "transport": "stdio"
+    },
+    {
+      "kind": "tool",
+      "step": 1,
+      "name": "get_current_time",
+      "arguments": {
+        "timezone": "Asia/Almaty"
+      },
+      "output": {
+        "now": "2026-10-19T17:11:46.007683+05:00",
+        "date": "2026-10-19",
+        "timezone": "Asia/Almaty"
+      },
+      "ok": true,
+      "duration_ms": 0
+    },
+    {
+      "kind": "tool",
+      "step": 1,
+      "name": "get_github_issues",
+      "arguments": {
+        "repository": "google/adk-python",
+        "limit": 2
+      },
+      "output": {
+        "error": {
+          "message": "Error executing tool get_github_issues: GitHub ограничил запросы или доступ. Попробуй позже либо настрой read-only GITHUB_TOKEN."
+        }
+      },
+      "ok": false,
+      "duration_ms": 3500
+    }
+  ],
+  "plan": null,
+  "sources": [],
+  "ok": true,
+  "mode": "gemini",
+  "model": "gemini-3.8-flash"
+}
